@@ -1,5 +1,9 @@
 using Sockets
 
+#
+
+byte_delimiter = UInt8[0xFF, 0xFE, 0xFD]
+
 function communicate_with_server(ip, port)
 
     sock = connect(ip, port)
@@ -15,6 +19,7 @@ function communicate_with_server(ip, port)
 
         byte_packet = UInt8[0x01, 0x02, 0x03, 0x04]
         write(sock, byte_packet)
+        write(sock, byte_delimiter)
 
         final_response = readline(sock)
         println("Final response from server: $final_response")

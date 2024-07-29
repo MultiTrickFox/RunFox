@@ -1,5 +1,9 @@
 using Sockets, .Threads
 
+#
+
+byte_delimiter = UInt8[0xFF, 0xFE, 0xFD]
+
 function handle_client(client_sock)
 
     try
@@ -11,7 +15,18 @@ function handle_client(client_sock)
         write(client_sock, response)
         println("Sent to client: $response")
 
-        byte_data = read(client_sock, 4)  # Adjust size as needed
+        # byte_data = read(client_sock, 4)  # Adjust size as needed
+        # println("Received byte packet: ", byte_data)
+
+        byte_data = UInt8[]
+        while true
+            byte = read(client_sock, UInt8)
+            push!(byte_data, byte)
+            if length(byte_data) >= length(byte_delimiter) && byte_data[end-length(byte_delimiter)+1:end] == byte_delimiter
+                byte_data = byte_data[1:end-length(byte_delimiter)]
+                break
+            end
+        end
         println("Received byte packet: ", byte_data)
 
         response = "Received your bytes!\n"
