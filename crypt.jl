@@ -49,7 +49,7 @@ function encrypt_pk(message::String, publickey_path="publickey.txt")
     return base64encode(encrypted_data)
 end
 
-function decrypt_pk(encrypted_message_base64::String, privatekey_path="privatekey.pem") # todo: case where privatekey is deleted, and in env
+function decrypt_pk(encrypted_message_base64::String, privatekey_path="privatekey.pem")
     decoded_data = base64decode(encrypted_message_base64)
     io = IOBuffer(decoded_data)
     cmd = pipeline(`openssl pkeyutl -decrypt -inkey $privatekey_path`, stdin=io)
