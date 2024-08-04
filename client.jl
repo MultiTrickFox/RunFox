@@ -1,5 +1,7 @@
 using Sockets
 
+# https://docs.julialang.org/en/v1/manual/variables/
+
 #
 
 byte_delimiter = UInt8[0xFF, 0xFE, 0xFD]
