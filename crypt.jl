@@ -19,18 +19,19 @@ using Base64
 #
 
 
-function hash(message, type="sha2-512")
-    cmd_args = []
-    if     type == "sha2-256"  type = "sha256"
-    elseif type == "sha2-512"  type = "sha512"
-	elseif type == "sha3-256"  type = "sha3-256"
-    elseif type == "sha3-512"  type = "sha3-512"
-	elseif type == "shake-256" type = "shake256"
-    else error("Unsupported hash type") end
+function hashish(message, type="shake-256", outbits=256) # TODO: this doesnt work when you change type here
+	type = get(Dict(
+		"sha2-256" => "sha256",
+		"sha2-512" => "sha512",
+		"sha3-256" => "sha3-256",
+		"sha3-512" => "sha3-512",
+		"shake-256" => "shake256",
+		"shake-512" => "shake512",
+	), type, type)
     io = IOBuffer(message)
-    output = read(pipeline(`openssl dgst -$type`, stdin=io), String)
+    output = read(pipeline( occursin("shake", type) ? `openssl dgst -$type` : `openssl dgst -$type -xoflen $(Int(outbits/8))` , stdin=io), String)
     close(io)
-    return split(output)[2]
+    return String(split(output)[2])
 end
 
 
@@ -58,6 +59,29 @@ function decrypt_pk(encrypted_message_base64::String, privatekey_path="privateke
     return decrypted_data
 end
 
+function sign_pk(message::String, privatekey_path="privatekey.pem")
+    io = IOBuffer(message)
+    cmd = pipeline(`openssl dgst -sha256 -sign $privatekey_path`, stdin=io)
+    signed_data = read(cmd, String)
+    close(io)
+    return base64encode(signed_data)  # Return the base64-encoded signed data
+end
+
+function verify_pk(data::String, signed_data_base64::String, publickey_path="publickey.txt")
+	io_data = IOBuffer(data)
+    signed_data = base64decode(signed_data_base64)
+    signature_file_path = tempname()
+    open(signature_file_path, "w") do file
+        write(file, signed_data)
+        flush(file)
+    end
+    cmd = pipeline(`openssl dgst -sha256 -verify $publickey_path -signature $signature_file_path`, stdin=io_data)
+    verification_output = read(cmd, String)
+    close(io_data)
+    rm(signature_file_path)
+    return verification_output=="Verified OK"
+end
+
 
 function generate_sk(bits_key=256, bits_iv=128)
     key_bytes = rand(UInt8, bits_key÷8)
@@ -69,7 +93,6 @@ end
 
 function encrypt_sk(message::String, key_hex::String, iv_hex::String)
     io = IOBuffer(message)
-    # TODO: calculate aes-256 or 512 from the bits_of_key
     cmd = `openssl enc -aes-$(length(key_hex)*4)-cbc -in - -K $key_hex -iv $iv_hex`
     encrypted_data = read(pipeline(cmd, stdin=io), String)
     close(io)
@@ -79,7 +102,6 @@ end
 function decrypt_sk(encrypted_message_base64::String, key_hex::String, iv_hex::String)
     encrypted_data = base64decode(encrypted_message_base64)
     io = IOBuffer(encrypted_data)
-    # TODO: calculate aes-256 or 512 from the bits_of_key
     cmd = `openssl enc -d -aes-$(length(key_hex)*4)-cbc -in - -K $key_hex -iv $iv_hex`
     decrypted_data = read(pipeline(cmd, stdin=io), String)
     close(io)
@@ -100,6 +122,11 @@ function test_crypt()
 	decrypted = decrypt_pk(encrypted)
 	println("Decrypted(PK):", decrypted)
 
+	signed = sign_pk("&&&&&;;;;|")
+	println("Signed(PK):", signed)
+	verified = verify_pk(signed, "&&&&&;;;;|")
+	println("Verified(PK):", verified)
+
 	sk,iv = generate_sk()
 	encrypted = encrypt_sk("&&&&&;;;;|", sk, iv)
 	println("Encrypted(SK):", encrypted)
@@ -107,3 +134,5 @@ function test_crypt()
 	println("Decrypted(SK):", decrypted)
 
 end
+
+test_crypt()
