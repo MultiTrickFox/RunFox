@@ -67,36 +67,35 @@ end
 function they_want_connection(client::TCPSocket)
 	try
 
+		client_ip, client_port = getpeername(client)
 
-		# TODO: I should publickey - auth them first !! initiation connection is free - i should make them do initial work
+		# ask their publickey
+		client_publickey = readline(client)
+		client_id = hashish(client_publickey)
 
+		# auth their privatekey
+		auth_req = hashish(rand(UInt8,16))
+		write(client, auth_req*"\n")
+		auth_res = readline(client)
+	    open(client_publickey*".txt", "w") do file write(file, client_publickey) end
+		auth_success = verify_pk(ip*"<>"*port*"<>"*auth_req, auth_res, client_publickey*".txt")
+		rm(client_publickey*".txt")
+		if !auth_success
+			close(client)
+			return
+		end
 
 		# they want my publickey
-		write(client, publickey*'\n')
+		write(client, publickey*"\n")
 
 		# they want to auth me
-		msg = readline(client)
-		write(client, sign_pk(string(client.getipaddr)*'<>'*msg)*'\n') # TODO: also include port here !!!  getpeername(sock::TCPSocket) -> (IPAddr, UInt16)  IP PORT
+		auth_req = readline(client)
+		write(client, sign_pk(string(client_ip)*"<>"*client_port*"<>"*msg)*"\n")
 
-		# i want their publickey
-		msg = readline(client)
+		contact_list[Node(client_id, client_ip, client_port, now(), now())] = client
 
-		# i want to auth them
-    	randomhash = hashish(rand(UInt8,16))
-     	write(client, randomhash*'\n')
-
-		# they send the signature, i check it
-		randomhash_signed = readline(client)
-		publickey_path = hashish(rand(UInt8,16)) # Todo: I dont need this, their publickey path is their <publickey>.txt
-	    open(publickey_path, "w") do file write(file, msg) end
-		randomhash_signed_success = verify_pk(ip*'<>'*randomhash, randomhash_signed, publickey_path) # TODO: also port !!!
-
-
-		end
 	catch e
 		println("client_wants_connection $client error: $e")
-	finally
-		close(client)
 	end
 end
 
@@ -265,7 +264,7 @@ function start_server(ip, port)
 
 end
 
-start_server("127.0.0.1", 1234)
+start_server("localhost", port)
 
 
 
