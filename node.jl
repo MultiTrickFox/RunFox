@@ -1,3 +1,6 @@
+import Base.:(==)
+using Dates
+
 include("crypt.jl")
 
 #

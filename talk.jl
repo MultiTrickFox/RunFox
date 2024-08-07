@@ -1,4 +1,19 @@
+using HTTP
+using Sockets, .Threads
+
 include("node.jl")
+
+#
+
+const publickey = !isfile("publickey.txt") ? generate_pk() : read("publickey.txt", String)
+const id = hashish(publickey)
+println("id is: $id")
+const privatekey = read("privatekey.pem")
+
+const ip = String(HTTP.get("https://multifox.ai/whoami").body)
+const port = 9696
+println("ip is: $ip")
+
 
 #
 
@@ -32,29 +47,66 @@ end
 #
 
 
-function handle_client(client)
+
+## Handshake protocol
+#
+# I am the server
+# they ask my publickey, I send it
+# they want to authenticate me, I sign it and send it
+# I ask for their publickey
+# I authenticate them
+# if everything checks out, I added them as contact, and sent nack
+#
+
+# I am the client
+# ...
+
+
+
+
+function they_want_connection(client::TCPSocket)
 	try
 
+
+		# TODO: I should publickey - auth them first !! initiation connection is free - i should make them do initial work
+
+
+		# they want my publickey
+		write(client, publickey*'\n')
+
+		# they want to auth me
+		msg = readline(client)
+		write(client, sign_pk(string(client.getipaddr)*'<>'*msg)*'\n') # TODO: also include port here !!!  getpeername(sock::TCPSocket) -> (IPAddr, UInt16)  IP PORT
+
+		# i want their publickey
 		msg = readline(client)
 
-		if msg=="publickey"
-			write(client, publickey)
-			write("\n")
+		# i want to auth them
+    	randomhash = hashish(rand(UInt8,16))
+     	write(client, randomhash*'\n')
 
-		elseif msg=="auth_challenge"
-			msg = readline(client)
-
-		elseif msg=="auth_signature"
-
+		# they send the signature, i check it
+		randomhash_signed = readline(client)
+		publickey_path = hashish(rand(UInt8,16)) # Todo: I dont need this, their publickey path is their <publickey>.txt
+	    open(publickey_path, "w") do file write(file, msg) end
+		randomhash_signed_success = verify_pk(ip*'<>'*randomhash, randomhash_signed, publickey_path) # TODO: also port !!!
 
 
 		end
 	catch e
-		println("handle_client error: $e")
+		println("client_wants_connection $client error: $e")
 	finally
-		close(client_sock)
+		close(client)
 	end
 end
+
+
+function i_want_connection(ip, port)
+
+
+end
+
+
 
 
 
@@ -85,36 +137,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-function wants_publickey(node::Node)
-	publickey
-end
-
-
-function wanna_auth(node::Node, mode="challenge")
-	# if mode=="challenge"
-	# 	# challenge: you encrypt something with their public key and ask them to decrypt it with their private key
-	# else if mode=="signature"
-	# 	# signature: ask them to encrypt something with their private key, and you decrypt it with their public key
-	# end
-end
-
-function wants_auth(node::Node, input::String, mode="challenge")
-
-
-end
 
 
 

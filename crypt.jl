@@ -70,15 +70,12 @@ end
 function verify_pk(data::String, signed_data_base64::String, publickey_path="publickey.txt")
 	io_data = IOBuffer(data)
     signed_data = base64decode(signed_data_base64)
-    signature_file_path = tempname()
-    open(signature_file_path, "w") do file
-        write(file, signed_data)
-        flush(file)
-    end
-    cmd = pipeline(`openssl dgst -sha256 -verify $publickey_path -signature $signature_file_path`, stdin=io_data)
+    signature_path = hashish(rand(UInt8,16))
+    open(signature_path, "w") do file write(file, signed_data) end
+    cmd = pipeline(`openssl dgst -sha256 -verify $publickey_path -signature $signature_path`, stdin=io_data)
     verification_output = read(cmd, String)
     close(io_data)
-    rm(signature_file_path)
+    rm(signature_path)
     return verification_output=="Verified OK"
 end
 
@@ -124,7 +121,7 @@ function test_crypt()
 
 	signed = sign_pk("&&&&&;;;;|")
 	println("Signed(PK):", signed)
-	verified = verify_pk(signed, "&&&&&;;;;|")
+	verified = verify_pk("&&&&&;;;;|", signed)
 	println("Verified(PK):", verified)
 
 	sk,iv = generate_sk()
