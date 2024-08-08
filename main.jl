@@ -28,9 +28,6 @@ function handle_client(peer_client::TCPSocket)
 		if message=="ping"
 			write(peer, "pong"*"\n")
 
-		elseif message=="find" # node or data , given an id
-
-
 		elseif message=="node" # given a node_id
 
 
@@ -54,15 +51,17 @@ function start_server(port::Int)
     server = listen(port)
     println("Server is running on $ip:$port")
 
-    while true
+    @async begin while 1
         peer_sock = accept(server)
         @spawn handle_client(peer_sock)
-    end
+    end end
 
+end; @async start_server(port)
+
+
+while true
+    sleep(3600) # dont kill the main process
 end
-
-@spawn start_server(port)
-
 
 
 
