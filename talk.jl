@@ -6,7 +6,7 @@ include("node.jl")
 #
 
 const publickey = !isfile("publickey.txt") ? generate_pk() : read("publickey.txt", String)
-const id = hashish(publickey)
+const id = hashi(publickey)
 println("id is: $id")
 const privatekey = read("privatekey.pem")
 
@@ -14,215 +14,180 @@ const ip = String(HTTP.get("https://multifox.ai/whoami").body)
 const port = 9696
 println("ip is: $ip")
 
-
 #
 
 
-struct Contact
+struct Peer
 	node::Node
-	socket::TCPSocket
+	symkey::String
+	publickey::String
 end
 
-const contact_list = Dict()
+const peers = Dict() # { TCPSocket : Peer }
 
 
 #
 
-const byte_delimiter = Vector{UInt8}("run<>fox")
+const string_delimiter = "run<>fox<>run"
+const byte_delimiter = Vector{UInt8}(string_delimiter)
 
-const max_bytes = 2056 # todo: implement this
+const max_bytes = 2056 # todo: implement this  # Todo: all "read" parts require this
 
-function readbytes(client)
-	buffer = UInt8[]
-    while true
-        push!(buffer, read(client_socket, UInt8))
-        if length(buffer) >= length(byte_delimiter) && buffer[end-length(byte_delimiter)+1:end] == byte_delimiter
-            resize!(buffer, length(buffer)-length(byte_delimiter))
-            break
-        end
-    end
-    return buffer
+#
+
+
+function i_want_publickey(peer::TCPSocket)
+	peer_publickey = readline(peer) # ask their publickey
+	auth_req = hashi(rand(UInt8,16)) # auth with their privatekey
+	write(peer, auth_req*"\n")
+	auth_res = readline(peer)
+    open(peer_publickey*".txt", "w") do file write(file, peer_publickey) end
+	auth_success = verify_pk(ip*"<>"*port*"<>"*auth_req, auth_res, peer_publickey*".txt")
+	rm(peer_publickey*".txt")
+	return auth_success ? peer_publickey : false
 end
 
+function they_want_publickey(peer::TCPSocket)
+	peer_ip, peer_port = getpeername(peer)
+	write(peer, publickey*"\n") # they ask my publickey
+	auth_req = readline(peer) # they auth with my privatekey
+	write(peer, sign_pk(string(peer_ip)*"<>"*peer_port*"<>"*msg)*"\n")
+end
+
+
+function i_want_symkey(peer::TCPSocket)
+	return readline(peer)
+end
+
+function they_want_symkey(peer::TCPSocket)
+	symkey, symiv = generate_sk()
+	write(peer, symkey*string_delimiter*symiv*"\n")
+	return symkey*string_delimiter*symiv
+end
+
+
 #
 
 
-
-## Handshake protocol
-#
-# I am the server
-# they ask my publickey, I send it
-# they want to authenticate me, I sign it and send it
-# I ask for their publickey
-# I authenticate them
-# if everything checks out, I added them as contact, and sent nack
-#
-
-# I am the client
-# ...
-
-
-
-
-function they_want_connection(client::TCPSocket)
+function handshake_peer_to_me(peer::TCPSocket)
 	try
 
-		client_ip, client_port = getpeername(client)
-
-		# ask their publickey
-		client_publickey = readline(client)
-		client_id = hashish(client_publickey)
-
-		# auth their privatekey
-		auth_req = hashish(rand(UInt8,16))
-		write(client, auth_req*"\n")
-		auth_res = readline(client)
-	    open(client_publickey*".txt", "w") do file write(file, client_publickey) end
-		auth_success = verify_pk(ip*"<>"*port*"<>"*auth_req, auth_res, client_publickey*".txt")
-		rm(client_publickey*".txt")
-		if !auth_success
-			close(client)
+		peer_publickey = i_want_publickey(peer)
+		if peer_publickey==false
+			close(peer)
 			return
 		end
 
-		# they want my publickey
-		write(client, publickey*"\n")
+		they_want_publickey(peer)
 
-		# they want to auth me
-		auth_req = readline(client)
-		write(client, sign_pk(string(client_ip)*"<>"*client_port*"<>"*msg)*"\n")
+		symkey = i_want_symkey(peer)
 
-		contact_list[Node(client_id, client_ip, client_port, now(), now())] = client
+		peer_id = hashi(peer_publickey)
+		peers[peer] = Peer(Node(peer_id, peer_ip, peer_port, now(), now()), symkey, peer_publickey)
 
 	catch e
-		println("client_wants_connection $client error: $e")
+		println("handshake_peer2me with: $peer error: $e")
+		close(peer)
+	end
+end
+
+function handshake_me_to_peer(peer_ip::String, peer_port::Int)
+	try
+
+		peer = connect(peer_ip, peer_port)
+
+		they_want_publickey(peer)
+
+		peer_publickey = i_want_publickey(peer)
+		if peer_publickey==false
+			close(peer)
+			return
+		end
+
+		symkey = they_want_symkey(peer)
+
+		peer_id = hashi(peer_publickey)
+		peers[peer] = Peer(Node(peer_id, peer_ip, peer_port, now(), now()), symkey, peer_publickey)
+
+	catch e
+		println("handshake_me2peer with: $peer error: $e")
+		close(peer)
 	end
 end
 
 
-function i_want_connection(ip, port)
+#
 
 
+function payload_peer_to_me(peer::TCPSocket, secure=false)
+	payload = UInt8[]
+    while true
+        push!(payload, read(peer, UInt8))
+        if length(payload) >= length(byte_delimiter) && payload[end-length(byte_delimiter)+1:end] == byte_delimiter
+            resize!(payload, length(payload)-length(byte_delimiter))
+            break
+        end
+    end
+    if secure payload = decrypt_sk(payload, peers[peer].symkey.split(string_delimiter)...) end
+    return buffer
+end
+
+function payload_me_to_peer(peer::TCPSocket, payload::Vector{UInt8}, secure=false)
+	if secure payload = encrypt_sk(payload, peers[peer].symkey.split(string_delimiter)...) end
+	write(peer, payload)
+	write(peer, byte_delimiter)
 end
 
 
-
-
-
-#         write(client_sock, "Hello, Client!\n")
-
-#         byte_data = UInt8[]
-#         while true
-#             byte = read(client_sock, UInt8)
-#             push!(byte_data, byte)
-#             if length(byte_data) >= length(byte_delimiter) && byte_data[end-length(byte_delimiter)+1:end] == byte_delimiter
-#                 byte_data = byte_data[1:end-length(byte_delimiter)]
-#                 break
-#             end
-#         end
-#         println("Received byte packet: ", byte_data)
-
-#         write(client_sock, "Received your bytes!\n")
-
-#     catch e
-#         println("An error occurred while handling a client: $e")
-#     finally
-#         close(client_sock)
-#     end
-
-# end
-
-
-
-
-
-
-
-
-
-function wanna_contact(node::Node) # add this node to kbucket using update kbucket
-
-	# first talk to each other by using each other's public keys'
-
-	# check_credential to each other
-
-	# then you determine a symmetric key and send to them
-
-	# save to your dict
-
+function message_peer_to_me(peer::TCPSocket, secure=false)
+	message = readline(peer)
+	if secure message = decrypt_sk(message, peers[peer].symkey.split(string_delimiter)...) end
+	return message
 end
 
-function wants_contact(node::Node)
-
-	# other side of above
-
-	# save to your dict
-
-end
-
-function contact(node::Node, message, dtype) # send everything as bytes and datatype
-
-	# if the other node is not in my dict, send NACK
-
+function message_me_to_peer(peer::TCPSocket, message::String, secure=false)
+	if secure message = encrypt_sk(message, peers[peer].symkey.split(string_delimiter)...) end
+	write(peer, message*"\n")
 end
 
 
+#
 
 
 
 
+# Dont forget --- you can send JSON.stringify(string)   while sending strings - it makes it easier.
 
 
-function wanna_ping(node::Node)
-    # Send a ping
-    # Receive a pong
-end
+function handle_peer(peer::TCPSocket)
 
-function wants_ping(node::Node)
-	# Received a ping
-	# Now send a pong
-end
+	message = readline(peer)
 
+	if message=="hello"
+		handshake_peer_to_me(peer)
 
+	elseif message=="ping"
+		write(peer, "pong"*"\n")
 
-function wanna_store(key::String, value::String, node::Node)
-    # Identify the closest nodes to the key
-    # Send the store request to these nodes
-end
-
-function wants_store(key::String, value::String, node::Node)
-	# check if the hash of the value is really the key
-end
+	elseif message=="find" # node or data , given an id
 
 
+	elseif message=="node" # given a node_id
 
-function wanna_find_id()
 
-end
+	elseif message=="data" # given a data_id OR node_id-data_id  ==> in this case, they need to seek node first..
 
-function wants_find_node()
 
-end
-
-function wants_find_data(id::String)
-	# If the key is in the local storage, return it
-    # Otherwise, query closest nodes for the key
-end
-
-function find_node(id::String)
-    # Return closest nodes to the target ID
-end
-
-function find_value(id::String)
-
-end
+	elseif message=="store"
 
 
 
+	elseif message=="boot"
 
-function join_network(node::Node, bootstrap_node::Node)
-    # Use the bootstrap node to find other nodes
-    # Populate the routing table using responses from FIND_NODE
+
+	end
+
+
 end
 
 
@@ -239,14 +204,7 @@ end
 
 
 
-
-
-
-
-
-
-
-
+#
 
 
 function start_server(ip, port)
@@ -258,8 +216,8 @@ function start_server(ip, port)
     sock = connect(ip, port)
 
     while true
-        client_sock = accept(server)
-        Threads.@spawn handle_client(client_sock)
+        peer_sock = accept(server)
+        Threads.@spawn handle_peer(peer_sock)
     end
 
 end
@@ -326,4 +284,4 @@ communicate_with_server("127.0.0.1", 1234)
 #     result[i] = Threads.threadid()
 # end
 
-# Threads.@spawn handle_client(client_sock)
+# Threads.@spawn handle_peer(peer_sock)
