@@ -1,5 +1,5 @@
 using HTTP
-using Sockets, .Threads
+using Sockets
 
 include("node.jl")
 
@@ -21,9 +21,16 @@ struct Peer
 	node::Node
 	symkey::String
 	publickey::String
+	client::TCPSocket # client is for you-ask-me
+	server::TCPSocket # server is for i-ask-you
 end
+==(p1::Peer, p2::Peer) = (p1.node == p2.node)
 
-const peers = Dict() # { TCPSocket : Peer }
+const peers = Dict() # { node_id : Peer }
+
+function find_peer_by_client(client::TCPSocket) for peer in values(peers) if peer.client==client return peer end end end
+function find_peer_by_server(server::TCPSocket) for peer in values(peers) if peer.server==server return peer end end end
+function find_peer_by_socket(socket::TCPSocket) for peer in values(peers) if peer.server==socket || peer.client==socket return peer end end end
 
 
 #
@@ -32,6 +39,39 @@ const string_delimiter = "run<>fox<>run"
 const byte_delimiter = Vector{UInt8}(string_delimiter)
 
 const max_bytes = 2056 # todo: implement this  # Todo: all "read" parts require this
+
+
+function payload_peer_to_me(peer::TCPSocket, secure=false)
+	payload = UInt8[]
+    while true
+        push!(payload, read(peer, UInt8))
+        if length(payload) >= length(byte_delimiter) && payload[end-length(byte_delimiter)+1:end] == byte_delimiter
+            resize!(payload, length(payload)-length(byte_delimiter))
+            break
+        end
+    end
+    if secure payload = decrypt_sk(payload, find_peer_by_socket(peer).symkey.split(string_delimiter)...) end
+    return buffer
+end
+
+function payload_me_to_peer(peer::TCPSocket, payload::Vector{UInt8}, secure=false)
+	if secure payload = encrypt_sk(payload, find_peer_by_socket(peer).symkey.split(string_delimiter)...) end
+	write(peer, payload)
+	write(peer, byte_delimiter)
+end
+
+
+function message_peer_to_me(peer::TCPSocket, secure=false)
+	message = readline(peer)
+	if secure message = decrypt_sk(message, find_peer_by_socket(peer).symkey.split(string_delimiter)...) end
+	return message
+end
+
+function message_me_to_peer(peer::TCPSocket, message::String, secure=false)
+	if secure message = encrypt_sk(message, find_peer_by_socket(peer).symkey.split(string_delimiter)...) end
+	write(peer, message*"\n")
+end
+
 
 #
 
@@ -69,219 +109,71 @@ end
 #
 
 
-function handshake_peer_to_me(peer::TCPSocket)
-	try
+# client: req giver, res taker
+# server: req taker, res giver
 
-		peer_publickey = i_want_publickey(peer)
-		if peer_publickey==false
-			close(peer)
-			return
-		end
 
-		they_want_publickey(peer)
+function they_want_connection(peer_client::TCPSocket) # their client to my server
 
-		symkey = i_want_symkey(peer)
+	peer_ip, peer_port = getpeername(peer_client)
 
-		peer_id = hashi(peer_publickey)
-		peers[peer] = Peer(Node(peer_id, peer_ip, peer_port, now(), now()), symkey, peer_publickey)
+	## We always verify each other's public key
 
-	catch e
-		println("handshake_peer2me with: $peer error: $e")
-		close(peer)
+	peer_publickey = i_want_publickey(peer_client)
+	if peer_publickey==false
+		close(peer_client)
+		return
 	end
+
+	they_want_publickey(peer_client)
+
+	peer_id = hashi(peer_publickey)
+
+	##
+
+	# check if my client is already connected to their server
+	peer = get(peers, peer_id, Nothing)
+
+	if peer==Nothing # first time we connect
+		symkey = i_want_symkey(peer_client)
+		peers[peer_id] = Peer(Node(peer_id, peer_ip, peer_port, now(), now()), symkey, peer_publickey, peer_client, Nothing)
+	else
+		peer.peer_client = peer_client
+	end
+
+	return peer_id
 end
 
-function handshake_me_to_peer(peer_ip::String, peer_port::Int)
-	try
+function i_want_connection(peer_ip::String, peer_port=port) # my client to their server
 
-		peer = connect(peer_ip, peer_port)
+	peer_server = connect(peer_ip, peer_port)
 
-		they_want_publickey(peer)
+	## We always verify each other's public key
 
-		peer_publickey = i_want_publickey(peer)
-		if peer_publickey==false
-			close(peer)
-			return
-		end
+	they_want_publickey(peer_server)
 
-		symkey = they_want_symkey(peer)
-
-		peer_id = hashi(peer_publickey)
-		peers[peer] = Peer(Node(peer_id, peer_ip, peer_port, now(), now()), symkey, peer_publickey)
-
-	catch e
-		println("handshake_me2peer with: $peer error: $e")
-		close(peer)
+	peer_publickey = i_want_publickey(peer_server)
+	if peer_publickey==false
+		close(peer_server)
+		return
 	end
+
+	peer_id = hashi(peer_publickey)
+
+	##
+
+	# check if their client is already connected to my server
+	peer = get(peers, peer_id, Nothing)
+
+	if peer==Nothing # first time we connect
+		symkey = they_want_symkey(peer_server)
+		peers[peer_id] = Peer(Node(peer_id, peer_ip, Nothing, now(), now()), symkey, peer_publickey, Nothing, peer_server)
+	else
+		peer.peer_server = peer_server
+	end
+
+	return peer_id
 end
 
 
 #
-
-
-function payload_peer_to_me(peer::TCPSocket, secure=false)
-	payload = UInt8[]
-    while true
-        push!(payload, read(peer, UInt8))
-        if length(payload) >= length(byte_delimiter) && payload[end-length(byte_delimiter)+1:end] == byte_delimiter
-            resize!(payload, length(payload)-length(byte_delimiter))
-            break
-        end
-    end
-    if secure payload = decrypt_sk(payload, peers[peer].symkey.split(string_delimiter)...) end
-    return buffer
-end
-
-function payload_me_to_peer(peer::TCPSocket, payload::Vector{UInt8}, secure=false)
-	if secure payload = encrypt_sk(payload, peers[peer].symkey.split(string_delimiter)...) end
-	write(peer, payload)
-	write(peer, byte_delimiter)
-end
-
-
-function message_peer_to_me(peer::TCPSocket, secure=false)
-	message = readline(peer)
-	if secure message = decrypt_sk(message, peers[peer].symkey.split(string_delimiter)...) end
-	return message
-end
-
-function message_me_to_peer(peer::TCPSocket, message::String, secure=false)
-	if secure message = encrypt_sk(message, peers[peer].symkey.split(string_delimiter)...) end
-	write(peer, message*"\n")
-end
-
-
-#
-
-
-
-
-# Dont forget --- you can send JSON.stringify(string)   while sending strings - it makes it easier.
-
-
-function handle_peer(peer::TCPSocket)
-
-	message = readline(peer)
-
-	if message=="hello"
-		handshake_peer_to_me(peer)
-
-	elseif message=="ping"
-		write(peer, "pong"*"\n")
-
-	elseif message=="find" # node or data , given an id
-
-
-	elseif message=="node" # given a node_id
-
-
-	elseif message=="data" # given a data_id OR node_id-data_id  ==> in this case, they need to seek node first..
-
-
-	elseif message=="store"
-
-
-
-	elseif message=="boot"
-
-
-	end
-
-
-end
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#
-
-
-function start_server(ip, port)
-
- 	ip_addr = ip isa IPAddr ? ip : ip isa AbstractString ? parse(IPAddr, ip) : error("Invalid IP address format")
-    server = listen(ip_addr, port)
-    println("Server is running on $ip:$port")
-
-    sock = connect(ip, port)
-
-    while true
-        peer_sock = accept(server)
-        Threads.@spawn handle_peer(peer_sock)
-    end
-
-end
-
-start_server("localhost", port)
-
-
-
-
-function communicate_with_server(ip, port)
-
-    sock = connect(ip, port)
-
-    try
-
-        send_string = "Hello, Server!\n"
-        write(sock, send_string)
-        println("Sent to peer: $send_string")
-
-        response = readline(sock)
-        println("Received from peer: $response")
-
-        byte_packet = UInt8[0x01, 0x02, 0x03, 0x04]
-        write(sock, byte_packet)
-        write(sock, byte_delimiter)
-
-        final_response = readline(sock)
-        println("Final response from server: $final_response")
-
-    catch e
-        println("An error occurred: $e")
-    finally
-        close(sock)
-    end
-
-end
-
-communicate_with_server("127.0.0.1", 1234)
-
-
-
-
-
-
-
-
-
-
-# Thrad Pool for new requests instead of 1 for each
-# Defining a Protocol: Raw sockets just send streams of bytes without any inherent structure. Define a simple protocol to frame your messages, which might include specifying the length of messages or starting with a specific byte sequence.
-# Graceful Error Recovery: Implement robust error handling that can gracefully manage and recover from errors like network failures, disconnections, or corrupted data packets.
-# Timeouts and Keep-Alives: Define timeout policies for inactive connections and implement keep-alive messages to maintain connections that are still open but idle.
-# Connection Throttling: Implement throttling mechanisms to control the rate of incoming connections and data processing to protect against DoS attacks and ensure service availability.
-# Buffer Management: Efficiently manage buffers for sending and receiving data to optimize memory usage and prevent buffer overflows.
-
-# The one who opens the contact first, should send ping/pong (keepalive) requests at each N seconds
-
-
-# rlock = ReentrantLock()
-# lock(rlock)
-# unlock(rlock)
-
-# Threads.@threads for i = 1:10
-#     result[i] = Threads.threadid()
-# end
-
-# Threads.@spawn handle_peer(peer_sock)
