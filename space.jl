@@ -1,5 +1,7 @@
 
 
+# your publickey (id) is the nameserver :)
+
 
 
 # contain file

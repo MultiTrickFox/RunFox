@@ -134,7 +134,7 @@ function they_want_connection(peer_client::TCPSocket) # their client to my serve
 
 	if peer==Nothing # first time we connect
 		symkey = i_want_symkey(peer_client)
-		peers[peer_id] = Peer(Node(peer_id, peer_ip, Nothing, now(), now()), symkey, peer_publickey, peer_client, Nothing)
+		peers[peer_id] = Peer(Node(peer_id, peer_ip, Nothing, now(UTC), now(UTC)), symkey, peer_publickey, peer_client, Nothing)
 	else
 		peer.peer_client = peer_client
 	end
@@ -142,7 +142,7 @@ function they_want_connection(peer_client::TCPSocket) # their client to my serve
 	return peer_id
 end
 
-function i_want_connection(peer_ip::String, peer_port::Int) # my client to their server
+function i_want_connection(peer_ip::String, peer_port=port) # my client to their server
 
 	peer_server = connect(peer_ip, peer_port)
 
@@ -165,7 +165,7 @@ function i_want_connection(peer_ip::String, peer_port::Int) # my client to their
 
 	if peer==Nothing # first time we connect
 		symkey = they_want_symkey(peer_server)
-		peers[peer_id] = Peer(Node(peer_id, peer_ip, Nothing, now(), now()), symkey, peer_publickey, Nothing, peer_server)
+		peers[peer_id] = Peer(Node(peer_id, peer_ip, Nothing, now(UTC), now(UTC)), symkey, peer_publickey, Nothing, peer_server)
 	else
 		peer.peer_server = peer_server
 		peer.node.port = peer_port

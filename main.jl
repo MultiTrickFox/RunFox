@@ -29,10 +29,31 @@ println("ip/port is: $ip:$port")
 # message_me_to_peer
 
 
+function req_ping(peer_server::TCPSocket) # todo: a socket might not be open, try to open it
+	message_me_to_peer(peer_server, Dict("cmd"=>"ping"), json=true)
+	return message_peer_to_me(peer_server)
+end
+
+function req_node(peer_server::TCPSocket)
+
+end
+
+function req_data(peer_server::TCPSocket)
+
+end
+
+function req_store(peer_server::TCPSocket)
+
+end
+
+
+
 
 ## Server Side - take req, give res
 
-function handle_client(peer_client::TCPSocket)
+function handle_req(peer_client::TCPSocket) # try
+
+	# if smt with this id is already being handled, return (same id cannot connect to u twice)
 
 	peer_ip, peer_port = getpeername(peer_client)
 	peer_id = handshake_peer_to_me(peer)
@@ -43,10 +64,10 @@ function handle_client(peer_client::TCPSocket)
 		msg = message_peer_to_me(peer_client, json=true) # we need cmd and args
 		cmd = msg["cmd"]
 
-		if msg=="ping"
-			message_me_to_peer(peer_client, port, json=false)
-			# update the kbucket
-			# update the last_seen time (also in update kbucket)
+		if msg=="ping"  # todo: we can ping at random times, and there can be an "avg online per hour" "per day" "per week" etc and if it fallse down below a certain threshold...
+			message_me_to_peer("pong", port)
+			peer.node.last_seen = now(UTC)
+			update_bags(peer.node)
 
 		elseif msg=="node" # given a node_id
 			closest_nodes = find_closest_nodes(msg["id"])
@@ -92,7 +113,7 @@ function start_server(port::Int)
 
     @async begin while 1
         peer_sock = accept(server)
-        @spawn handle_client(peer_sock)
+        @spawn handle_req(peer_sock)
     end end
 
 end; @spawn start_server(port)

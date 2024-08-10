@@ -6,36 +6,29 @@ include("crypt.jl")
 #
 
 
-mutable struct Node # a person can own multiple nodes with same id, different ip/port
-    id::String # hash of the publickey
+mutable struct Node
+    id::String
     ip::String
     port::Int
     first_seen::DateTime
-    last_seen::DateTime # todo: we can ping at random times, and there can be an "avg online per hour" "per day" "per week" etc and if it fallse down below a certain threshold...
+    last_seen::DateTime
 end
 ==(n1::Node, n2::Node) = (n1.id == n2.id) && (n1.ip == n2.ip) && (n1.port == n2.port)
 
 
 mutable struct Data # this is stored on disk with "id.uint8" or "id - node.id"
-	id::String # hash of node_id+a_title_i_pick
+	id::String # hashi(content)		;;
+	name::String # string filename  ;;  myfile.txt
 	node::Node # nullable
 	last_seen::DateTime # nullable
 end
 ==(d1::Data, d2::Data) = (d1.id == d2.id) && (d1.node == d2.node)
 
-# when i receive data, if id != hash(data) then I ask it to the origin node, ( then origin node cant be null! - else its a badactor )
-# else its a normal mode data
-
-# when a Data is requested, this node will check its content wrt origin (if its not null)
-# if original has not changed, it will send the value
-# if the original has changed, it will forward you to origin
-
-# the origin has followers, so if you ask the origin, it can forward you to one of its followers
 
 #
 
 
-function xor_distance(id1::String, id2::String, numerical=false) # hexadecimal hash strings
+function xor_distance(id1::String, id2::String, numerical=false)
     xor_result = parse(BigInt, id1, base=16) ⊻ parse(BigInt, id2, base=16)
     if numerical return xor_result end
     bool_array = Bool[]
@@ -46,43 +39,31 @@ function xor_distance(id1::String, id2::String, numerical=false) # hexadecimal h
 end
 
 
+#
 
-const num_bags = 256 #8 # 2^8 = 256
+
+const num_bags = 256
 const per_bag = 4
 
-# for each bag (1 to 256)  # it starts from last digit to first digit
 
-struct Bag
-	k::Int # range is 1_0000 to 1_1111
+struct Bag # for each bag (1 to 256) it starts from MSB digit to LSB, meaning Kth is the closest one to us
+	k::Int # range is 1_{0000}*k to 1_{1111}*k
 	nodes::Vector{Node}
 end
-# keep the node's sorted by last_seen time, oldest one's at the beginning, newest one's at the end.
 
-
-# bags go from K to 1 in closeness, meaning Kth is the closest one to us
-# 1 is the largest, bc 1st sigbit
 const bags = [ Bag(k,[]) for k in 1:num_bags ]
 
-# in julia, a[end-2:end] means last -3 elements gg enjoy :)
-
-
-
-
-# given a distance result, check which leftmostmax index is true ;; thats the KBucket's k
-
-# todo: this function should acquire lock, bc of modification
 
 function update_bags(node::Node)
-	distance = xor_distance(id, node.id)
+	println("updating kbag for $node.id")
 
-	println("updating kbag for $node")
+	distance = xor_distance(id, node.id)
 	println(distance)
 
 	for (i,bit) in enumerate(distance)
 		if bit # Find the appropriate bucket based on distance # bags[i]
-			# If the node is already in the bucket, update the last_seen //move it to the end
-			idx = findfirst(e->e==node, bags[i].nodes) # ==(node) means e -> e == node
-			if idx != nothing
+			idx = findfirst(e->e==node, bags[i].nodes)
+			if idx != nothing # If the node is already in the bucket, update the last_seen //move it to the end
 				bags[i][idx].last_seen = node.last_seen # we should pop it then add it -> for seen order
 				println("updated last seen")
 			elseif length(bags[i].nodes) < per_bag # If the bucket is not full, add the node
@@ -98,15 +79,11 @@ function update_bags(node::Node)
 	end
 end
 
-function find_closest_nodes(id_other::String, num=per_bag) # this can be a data_id or node_id
 
-	# if this id is me
-	# if this id is data in me
-	# else ...:
+function find_closest_nodes(id_other::String, num=per_bag)
+	println("checking kbag for $id_other")
 
 	nodes = []
-
-	# find closest bucket
 
     distance = xor_distance(id, id_other)
     println(distance)
@@ -114,9 +91,8 @@ function find_closest_nodes(id_other::String, num=per_bag) # this can be a data_
 	idx = findfirst(e->e, distance)
 	println("closest in $idx th bag")
 
-	for i in idx:-1:1
-		#if length(bags[i].items)==0 continue end
-		if length(bags[i].nodes)==0
+	for i in idx:-1:1 # in julia, a[end-2:end] means last -3 elements gg enjoy :)
+		if length(bags[i].nodes)==0 # if length(bags[i].items)==0 continue end
 			println("bag $i empty")
 			continue
 		end
@@ -129,15 +105,44 @@ function find_closest_nodes(id_other::String, num=per_bag) # this can be a data_
 end
 
 
+#
 
-# update_bags(Node(hashish("hello there"), "localhost", 30, now(), now()))
-# update_bags(Node(hashish("my friend"), "localhost", 31, now(), now()))
-# update_bags(Node(hashish("yowyowoyow"), "localhost", 33, now(), now()))
-# update_bags(Node(hashish("ei ei ei"), "localhost", 30, now(), now()))
-# update_bags(Node(hashish("yo yo yo"), "localhost", 31, now(), now()))
-# update_bags(Node(hashish("supman"), "localhost", 33, now(), now()))
 
-# println(bags)
+function print_bags()
+	for bag in bags
+		if length(bag.nodes)==0 continue end
+		println("Bag $(bag.k)")
+		for node in sort(bag.nodes, by=e->xor_distance(e.id, id, true), rev=true)
+			println("\t$node")
+		end
+	end
+end
 
-# nodeX = find_closest_nodes(hashish("qweqweqw"))
-# println(nodeX)
+
+#
+
+# function test_node()
+
+# 	update_bags(Node(hashi("aieaera"), "localhost", 30, now(), now()))
+# 	update_bags(Node(hashi("qweqws"), "localhost", 31, now(), now()))
+# 	update_bags(Node(hashi("zimbabwe"), "localhost", 32, now(), now()))
+# 	update_bags(Node(hashi("tupitu"), "localhost", 33, now(), now()))
+# 	update_bags(Node(hashi("zumar"), "localhost", 34, now(), now()))
+# 	update_bags(Node(hashi("supaman"), "localhost", 35, now(), now()))
+# 	update_bags(Node(hashi("kapiku"), "localhost", 36, now(), now()))
+# 	update_bags(Node(hashi("zomon"), "localhost", 37, now(), now()))
+# 	update_bags(Node(hashi("somon"), "localhost", 38, now(), now()))
+# 	update_bags(Node(hashi("luparr"), "localhost", 39, now(), now()))
+# 	update_bags(Node(hashi("worsh"), "localhost", 40, now(), now()))
+# 	update_bags(Node(hashi("kirpik"), "localhost", 41, now(), now()))
+# 	update_bags(Node(hashi("kopek"), "localhost", 42, now(), now()))
+# 	update_bags(Node(hashi("kedi"), "localhost", 43, now(), now()))
+# 	update_bags(Node(hashi("lambda"), "localhost", 44, now(), now()))
+# 	update_bags(Node(hashi("yumenyi"), "localhost", 45, now(), now()))
+
+# 	print_bags()
+
+# 	nodeX = find_closest_nodes(hashi("banditos"))
+# 	println(nodeX)
+
+# end; test_node()

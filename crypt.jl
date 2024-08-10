@@ -63,7 +63,7 @@ function sign_pk(message::String, privatekey_path="privatekey.pem")
     cmd = pipeline(`openssl dgst -sha256 -sign $privatekey_path`, stdin=io)
     signed_data = read(cmd, String)
     close(io)
-    return base64encode(signed_data)  # Return the base64-encoded signed data
+    return base64encode(signed_data)
 end
 function verify_pk(data::String, signed_data_base64::String, publickey_path="publickey.pem")
 	io_data = IOBuffer(data)
@@ -122,38 +122,38 @@ end
 
 
 const publickey = !isfile("publickey.pem") ? generate_pk() : read("publickey.pem", String)
-const id = hashi(publickey)
 const privatekey = read("privatekey.pem")
+const id = hashi(publickey)
 
 
 #
 
-function test_crypt()
+# function test_crypt()
 
-	hashed = hashi("&&&&&;;;;|")
-	println("Hashed:", hashed)
+# 	hashed = hashi("&&&&&;;;;|")
+# 	println("Hashed:", hashed)
 
-	encrypted = encrypt_pk("&&&&&;;;;|")
-	println("Encrypted(PK):", encrypted)
-	decrypted = decrypt_pk(encrypted)
-	println("Decrypted(PK):", decrypted)
+# 	encrypted = encrypt_pk("&&&&&;;;;|")
+# 	println("Encrypted(PK):", encrypted)
+# 	decrypted = decrypt_pk(encrypted)
+# 	println("Decrypted(PK):", decrypted)
 
-	signed = sign_pk("&&&&&;;;;|")
-	println("Signed(PK):", signed)
-	verified = verify_pk("&&&&&;;;;|", signed)
-	println("Verified(PK):", verified)
+# 	signed = sign_pk("&&&&&;;;;|")
+# 	println("Signed(PK):", signed)
+# 	verified = verify_pk("&&&&&;;;;|", signed)
+# 	println("Verified(PK):", verified)
 
-	sk,iv = generate_sk()
-	encrypted = encrypt_sk("&&&&&;;;;|", sk, iv)
-	println("Encrypted(SK):", encrypted)
-	decrypted = decrypt_sk(encrypted, sk, iv)
-	println("Decrypted(SK):", decrypted)
+# 	sk,iv = generate_sk()
+# 	encrypted = encrypt_sk("&&&&&;;;;|", sk, iv)
+# 	println("Encrypted(SK):", encrypted)
+# 	decrypted = decrypt_sk(encrypted, sk, iv)
+# 	println("Decrypted(SK):", decrypted)
 
-	randombytes = rand(UInt8, 4)
-	println("randombytes:", randombytes)
-	encrypted = encrypt_sk(randombytes, sk, iv)
-	println("Encrypted(SK)(bytes):", encrypted)
-	decrypted = decrypt_sk(encrypted, sk, iv)
-	println("Decrypted(SK)(bytes):", decrypted)
+# 	randombytes = rand(UInt8, 4)
+# 	println("randombytes:", randombytes)
+# 	encrypted = encrypt_sk(randombytes, sk, iv)
+# 	println("Encrypted(SK)(bytes):", encrypted)
+# 	decrypted = decrypt_sk(encrypted, sk, iv)
+# 	println("Decrypted(SK)(bytes):", decrypted)
 
-end; test_crypt()
+# end; test_crypt()
