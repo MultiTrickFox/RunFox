@@ -31,44 +31,12 @@ function find_peer_by_socket(socket::TCPSocket) for peer in values(peers) if pee
 
 #
 
+
+const max_bytes = 2056
+# todo: implement this  # Todo: all "read" parts require this
+
 const string_delimiter = "run<>fox<>run"
 const byte_delimiter = Vector{UInt8}(string_delimiter)
-
-const max_bytes = 2056 # todo: implement this  # Todo: all "read" parts require this
-
-
-function payload_peer_to_me(peer::TCPSocket; secure=false)
-	payload = UInt8[]
-    while true
-        push!(payload, read(peer, UInt8))
-        if length(payload) >= length(byte_delimiter) && payload[end-length(byte_delimiter)+1:end] == byte_delimiter
-            resize!(payload, length(payload)-length(byte_delimiter))
-            break
-        end
-    end
-    if secure payload = decrypt_sk(payload, find_peer_by_socket(peer).symkey.split(string_delimiter)...) end
-    return buffer
-end
-
-function payload_me_to_peer(peer::TCPSocket, payload::Vector{UInt8}; secure=false)
-	if secure payload = encrypt_sk(payload, find_peer_by_socket(peer).symkey.split(string_delimiter)...) end
-	write(peer, payload)
-	write(peer, byte_delimiter)
-end
-
-
-function message_peer_to_me(peer::TCPSocket; json=false, secure=false) # TODO: make sure json.json really jsons the "\n"s correctly.
-	message = readline(peer)
-	if secure message = decrypt_sk(message, find_peer_by_socket(peer).symkey.split(string_delimiter)...) end
-	if json message = JSON.parse(message) end
-	return message
-end
-
-function message_me_to_peer(peer::TCPSocket; message::String, json=false, secure=false)
-	if json message = JSON.json(message) end
-	if secure message = encrypt_sk(message, find_peer_by_socket(peer).symkey.split(string_delimiter)...) end
-	write(peer, message*"\n")
-end
 
 
 #
@@ -94,12 +62,19 @@ end
 
 
 function i_want_symkey(peer::TCPSocket)
-	return readline(peer)
+	message = readline(peer)
+	message = decrypt_pk(message) # I decrypt with my privatekey
+	return message
 end
 
 function they_want_symkey(peer::TCPSocket)
 	symkey, symiv = generate_sk()
-	write(peer, symkey*string_delimiter*symiv*"\n")
+	message = symkey*string_delimiter*symiv
+	peer_publickey = find_peer_by_server(peer).publickey
+	open(peer_publickey*".txt", "w") do file write(file, peer_publickey) end
+	message = encrypt_pk(message, peer_publickey*".txt") # I encrypt with their publickey
+	rm(peer_publickey*".txt")
+	write(peer, message*"\n")
 	return symkey*string_delimiter*symiv
 end
 
@@ -129,8 +104,7 @@ function they_want_connection(peer_client::TCPSocket) # their client to my serve
 
 	##
 
-	# check if my client is already connected to their server
-	peer = get(peers, peer_id, Nothing)
+	peer = get(peers, peer_id, Nothing) # check if my client has already connected to their server
 
 	if peer==Nothing # first time we connect
 		symkey = i_want_symkey(peer_client)
@@ -160,18 +134,54 @@ function i_want_connection(peer_ip::String, peer_port=port) # my client to their
 
 	##
 
-	# check if their client is already connected to my server
-	peer = get(peers, peer_id, Nothing)
+	peer = get(peers, peer_id, Nothing) # check if their client has already connected to my server
 
 	if peer==Nothing # first time we connect
-		symkey = they_want_symkey(peer_server)
-		peers[peer_id] = Peer(Node(peer_id, peer_ip, Nothing, now(UTC), now(UTC)), symkey, peer_publickey, Nothing, peer_server)
+		peers[peer_id] = Peer(Node(peer_id, peer_ip, Nothing, now(UTC), now(UTC)), Nothing, peer_publickey, Nothing, peer_server)
+		peers[peer_id].symkey = they_want_symkey(peer_server)
 	else
 		peer.peer_server = peer_server
 		peer.node.port = peer_port
 	end
 
 	return peer_id
+end
+
+
+#
+
+
+function payload_peer_to_me(peer::TCPSocket; secure=true)
+	payload = UInt8[]
+    while true
+        push!(payload, read(peer, UInt8))
+        if length(payload) >= length(byte_delimiter) && payload[end-length(byte_delimiter)+1:end] == byte_delimiter
+            resize!(payload, length(payload)-length(byte_delimiter))
+            break
+        end
+    end
+    if secure payload = decrypt_sk(payload, find_peer_by_socket(peer).symkey.split(string_delimiter)...) end
+    return buffer
+end
+
+function payload_me_to_peer(peer::TCPSocket, payload::Vector{UInt8}; secure=true)
+	if secure payload = encrypt_sk(payload, find_peer_by_socket(peer).symkey.split(string_delimiter)...) end
+	write(peer, payload)
+	write(peer, byte_delimiter)
+end
+
+
+function message_peer_to_me(peer::TCPSocket; json=false, secure=true) # TODO: make sure json.json really jsons the "\n"s correctly.
+	message = readline(peer)
+	if secure message = decrypt_sk(message, find_peer_by_socket(peer).symkey.split(string_delimiter)...) end
+	if json message = JSON.parse(message) end
+	return message
+end
+
+function message_me_to_peer(peer::TCPSocket; message::String, json=false, secure=true)
+	if json message = JSON.json(message) end
+	if secure message = encrypt_sk(message, find_peer_by_socket(peer).symkey.split(string_delimiter)...) end
+	write(peer, message*"\n")
 end
 
 

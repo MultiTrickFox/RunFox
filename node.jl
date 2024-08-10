@@ -16,11 +16,11 @@ end
 ==(n1::Node, n2::Node) = (n1.id == n2.id) && (n1.ip == n2.ip) && (n1.port == n2.port)
 
 
-mutable struct Data # this is stored on disk with "id.uint8" or "id - node.id"
-	id::String # hashi(content)		;;
-	name::String # string filename  ;;  myfile.txt
-	node::Node # nullable
-	last_seen::DateTime # nullable
+mutable struct Data
+	id::String # hashi(content)
+	node::Node # nullable / hashi(id)
+	first_seen::DateTime
+	last_seen::DateTime
 end
 ==(d1::Data, d2::Data) = (d1.id == d2.id) && (d1.node == d2.node)
 
@@ -32,7 +32,7 @@ function xor_distance(id1::String, id2::String, numerical=false)
     xor_result = parse(BigInt, id1, base=16) ⊻ parse(BigInt, id2, base=16)
     if numerical return xor_result end
     bool_array = Bool[]
-    for i in (length(id1)*4-1):-1:0 # Shift the xor_result right by 'i' bits and check the least significant bit
+    for i in length(id1)*4-1:-1:0 # Shift the xor_result right by 'i' bits and check the least significant bit
         push!(bool_array, (xor_result >> i) & 1 == 1)
     end
     return bool_array

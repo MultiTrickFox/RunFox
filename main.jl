@@ -22,11 +22,12 @@ println("ip/port is: $ip:$port")
 
 
 
+
+
+
+
 # Dont forget --- you can send JSON(string)   while sending strings - it makes it easier.
 # careful: \n and \\n do not go well with crypt.jls
-
-# message_peer_to_me  --> make me auto json?
-# message_me_to_peer
 
 
 function req_ping(peer_server::TCPSocket) # todo: a socket might not be open, try to open it
@@ -34,17 +35,27 @@ function req_ping(peer_server::TCPSocket) # todo: a socket might not be open, tr
 	return message_peer_to_me(peer_server)
 end
 
-function req_node(peer_server::TCPSocket)
-
+function req_node(peer_server::TCPSocket, id::String)
+	message_me_to_peer(peer_server, Dict("cmd"=>"node", "id"=>id), json=true)
+	return message_peer_to_me(peer_server, json=true)
 end
 
-function req_data(peer_server::TCPSocket)
-
+function req_data(peer_server::TCPSocket, id::String)
+	message_me_to_peer(peer_server, Dict("cmd"=>"data", "id"=>id), json=true)
+	res = message_peer_to_me(peer_server, json=true)
+	# res can be:  list of nodes , "ACK" to signal I will send u the data next
+	# for the case of followers, they can send me one or multiple follower (which is the list of nodes case)
+	return res!="ACK" ? res : payload_peer_to_me(peer_server)
 end
 
 function req_store(peer_server::TCPSocket)
 
 end
+
+function req_follow(peer_server::TCPSocket, prefixes::Vector{String})
+
+end
+
 
 
 
@@ -56,7 +67,7 @@ function handle_req(peer_client::TCPSocket) # try
 	# if smt with this id is already being handled, return (same id cannot connect to u twice)
 
 	peer_ip, peer_port = getpeername(peer_client)
-	peer_id = handshake_peer_to_me(peer)
+	peer_id = they_want_connection(peer)
 	peer = peers[peer_id]
 
 	while 1
@@ -64,18 +75,19 @@ function handle_req(peer_client::TCPSocket) # try
 		msg = message_peer_to_me(peer_client, json=true) # we need cmd and args
 		cmd = msg["cmd"]
 
-		if msg=="ping"  # todo: we can ping at random times, and there can be an "avg online per hour" "per day" "per week" etc and if it fallse down below a certain threshold...
+		if msg=="ping" # todo: we can ping at random times, and there can be an "avg online per hour" "per day" "per week" etc and if it fallse down below a certain threshold...
 			message_me_to_peer("pong", port)
 			peer.node.last_seen = now(UTC)
 			update_bags(peer.node)
 
 		elseif msg=="node" # given a node_id
 			closest_nodes = find_closest_nodes(msg["id"])
-			# todo: only return the id,ip,port of these - not the entire node
-			# some of these ports may be unfilled (if they only connected to us with their_client -> our_server)
-			# in that case receiver is supposed to ping them.
 
-		elseif msg=="data" # given a data_id
+		elseif msg=="data" # given a data_id   ;; msg["id"]
+
+			# A) Regular case
+			# B) Your file follower case
+
 			#  ask the "space" ; if you contain it, then for permissions
 			# if you dont have it, direct to closest
 			# data can be under */
@@ -88,16 +100,9 @@ function handle_req(peer_client::TCPSocket) # try
 		# elseif message=="boot" # No such thing, just do "node" on your own ID, then from the closest to you to others, you will keep doing "node" ; do this until you have X amount in your buckets
 
 
-
-
-		elseif msg=="follower"
+		elseif msg=="follow"
 			# they want to be your follower
-
-
-		elseif msg=="nodedata"
-			# :: the node-data case :: (only here)
-			# on the origin->follower case
-			# send a special redirect message type
+			# for certain files
 
 
 
@@ -107,9 +112,19 @@ function handle_req(peer_client::TCPSocket) # try
 end
 
 
+
+
+
+
+
+
+
+
+
 function start_server(port::Int)
 
     server = listen(port)
+    println("server is listening..")
 
     @async begin while 1
         peer_sock = accept(server)
