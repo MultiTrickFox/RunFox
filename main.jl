@@ -1,6 +1,17 @@
 using .Threads
 
+include("util.jl")
 include("talk.jl")
+include("space.jl")
+
+#
+
+
+# run me like this: julia main.jl --threads 3,1  => this puts the main in the interactive
+
+println("id is: $id")
+println("ip/port is: $ip:$port")
+
 
 #
 
@@ -33,30 +44,41 @@ function handle_client(peer_client::TCPSocket)
 		cmd = msg["cmd"]
 
 		if msg=="ping"
-			message_me_to_peer(peer_client, "pong", json=false)
+			message_me_to_peer(peer_client, port, json=false)
 			# update the kbucket
 			# update the last_seen time (also in update kbucket)
 
 		elseif msg=="node" # given a node_id
 			closest_nodes = find_closest_nodes(msg["id"])
+			# todo: only return the id,ip,port of these - not the entire node
 			# some of these ports may be unfilled (if they only connected to us with their_client -> our_server)
 			# in that case receiver is supposed to ping them.
-			# but they dont know where to ping them... try 9696 by default, but if its unresponsive, u gotta check if others connected to their server
 
 		elseif msg=="data" # given a data_id
 			#  ask the "space" ; if you contain it, then for permissions
 			# if you dont have it, direct to closest
+			# data can be under */
+			# if its not under general/  ( its me/ or id/ ) then check the read permissions
+
+		elseif msg=="store"
+			# ask the "space" ; if you have it, then if you accept it
+			# public vs follower case (if you are their follower)
+
+		# elseif message=="boot" # No such thing, just do "node" on your own ID, then from the closest to you to others, you will keep doing "node" ; do this until you have X amount in your buckets
+
+
+
+
+		elseif msg=="follower"
+			# they want to be your follower
+
 
 		elseif msg=="nodedata"
 			# :: the node-data case :: (only here)
 			# on the origin->follower case
 			# send a special redirect message type
 
-		elseif msg=="store"
-			# ask the "space" ; if you have it, then if you accept it
-			# public vs follower case
 
-		# elseif message=="boot" # No such thing, just do "node" on your own ID, then from the closest to you to others, you will keep doing "node" ; do this until you have X amount in your buckets
 
 
 		end
@@ -67,21 +89,20 @@ end
 function start_server(port::Int)
 
     server = listen(port)
-    println("Server is running on $ip:$port")
 
     @async begin while 1
         peer_sock = accept(server)
         @spawn handle_client(peer_sock)
     end end
 
-end; @async start_server(port)
+end; @spawn start_server(port)
 
 
 while true
     sleep(3600) # dont kill the main process
 end
 
-
+## TODO: test case here where you connect to your ip:port and readline() send messages
 
 
 

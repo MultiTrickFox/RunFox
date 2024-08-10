@@ -8,7 +8,6 @@ include("node.jl")
 
 const ip = String(HTTP.get("https://multifox.ai/whoami").body)
 const port = 9696
-println("ip is: $ip")
 
 #
 

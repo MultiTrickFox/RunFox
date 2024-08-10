@@ -123,7 +123,6 @@ end
 
 const publickey = !isfile("publickey.pem") ? generate_pk() : read("publickey.pem", String)
 const id = hashi(publickey)
-println("id is: $id")
 const privatekey = read("privatekey.pem")
 
 
