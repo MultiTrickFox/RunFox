@@ -8,12 +8,18 @@ include("talk.jl")
 # Bring your own Computer
 
 
-# Dont forget --- you can send JSON.stringify(string)   while sending strings - it makes it easier.
+
+
+
+# Dont forget --- you can send JSON(string)   while sending strings - it makes it easier.
+# careful: \n and \\n do not go well with crypt.jls
+
+# message_peer_to_me  --> make me auto json?
+# message_me_to_peer
 
 
 
 ## Server Side - take req, give res
-
 
 function handle_client(peer_client::TCPSocket)
 
@@ -23,22 +29,34 @@ function handle_client(peer_client::TCPSocket)
 
 	while 1
 
-		message = readline(peer)
+		msg = message_peer_to_me(peer_client, json=true) # we need cmd and args
+		cmd = msg["cmd"]
 
-		if message=="ping"
-			write(peer, "pong"*"\n")
+		if msg=="ping"
+			message_me_to_peer(peer_client, "pong", json=false)
+			# update the kbucket
+			# update the last_seen time (also in update kbucket)
 
-		elseif message=="node" # given a node_id
+		elseif msg=="node" # given a node_id
+			closest_nodes = find_closest_nodes(msg["id"])
+			# some of these ports may be unfilled (if they only connected to us with their_client -> our_server)
+			# in that case receiver is supposed to ping them.
+			# but they dont know where to ping them... try 9696 by default, but if its unresponsive, u gotta check if others connected to their server
 
+		elseif msg=="data" # given a data_id
+			#  ask the "space" ; if you contain it, then for permissions
+			# if you dont have it, direct to closest
 
-		elseif message=="data" # given a data_id (case where this data has an origin, and case where there is none)
+		elseif msg=="nodedata"
+			# :: the node-data case :: (only here)
+			# on the origin->follower case
+			# send a special redirect message type
 
+		elseif msg=="store"
+			# ask the "space" ; if you have it, then if you accept it
+			# public vs follower case
 
-		elseif message=="store"
-
-
-
-		elseif message=="boot"
+		# elseif message=="boot" # No such thing, just do "node" on your own ID, then from the closest to you to others, you will keep doing "node" ; do this until you have X amount in your buckets
 
 
 		end

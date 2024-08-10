@@ -1,5 +1,5 @@
 .DS_Store
 **/.DS_Store
-publickey.txt
-privatekey.txt
+publickey.pem
 privatekey.pem
+/space/

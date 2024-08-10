@@ -37,12 +37,12 @@ end
 
 function generate_pk(bits=3072)
     run(`openssl genpkey -algorithm RSA -out privatekey.pem -pkeyopt rsa_keygen_bits:$bits`) # Generate the RSA private key
-    run(`openssl rsa -pubout -in privatekey.pem -out publickey.txt`) # Extract the public key from the private key
-    publickey = read("publickey.txt", String)
+    run(`openssl rsa -pubout -in privatekey.pem -out publickey.pem`) # Extract the public key from the private key
+    publickey = read("publickey.pem", String)
     return publickey
 end
 
-function encrypt_pk(message::String, publickey_path="publickey.txt")
+function encrypt_pk(message::String, publickey_path="publickey.pem")
     io = IOBuffer(message)
     cmd = pipeline(`openssl pkeyutl -encrypt -pubin -inkey $publickey_path`, stdin=io)
     encrypted_data = read(cmd, String)
@@ -65,7 +65,7 @@ function sign_pk(message::String, privatekey_path="privatekey.pem")
     close(io)
     return base64encode(signed_data)  # Return the base64-encoded signed data
 end
-function verify_pk(data::String, signed_data_base64::String, publickey_path="publickey.txt")
+function verify_pk(data::String, signed_data_base64::String, publickey_path="publickey.pem")
 	io_data = IOBuffer(data)
     signed_data = base64decode(signed_data_base64)
     signature_path = hashi(rand(UInt8,16))
@@ -121,6 +121,14 @@ end
 #
 
 
+const publickey = !isfile("publickey.pem") ? generate_pk() : read("publickey.pem", String)
+const id = hashi(publickey)
+println("id is: $id")
+const privatekey = read("privatekey.pem")
+
+
+#
+
 function test_crypt()
 
 	hashed = hashi("&&&&&;;;;|")
@@ -149,6 +157,4 @@ function test_crypt()
 	decrypted = decrypt_sk(encrypted, sk, iv)
 	println("Decrypted(SK)(bytes):", decrypted)
 
-end
-
-test_crypt()
+end; test_crypt()

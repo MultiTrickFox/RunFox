@@ -1,14 +1,10 @@
 using HTTP
 using Sockets
+using JSON
 
 include("node.jl")
 
 #
-
-const publickey = !isfile("publickey.txt") ? generate_pk() : read("publickey.txt", String)
-const id = hashi(publickey)
-println("id is: $id")
-const privatekey = read("privatekey.pem")
 
 const ip = String(HTTP.get("https://multifox.ai/whoami").body)
 const port = 9696
@@ -26,6 +22,7 @@ struct Peer
 end
 ==(p1::Peer, p2::Peer) = (p1.node == p2.node)
 
+
 const peers = Dict() # { node_id : Peer }
 
 function find_peer_by_client(client::TCPSocket) for peer in values(peers) if peer.client==client return peer end end end
@@ -41,7 +38,7 @@ const byte_delimiter = Vector{UInt8}(string_delimiter)
 const max_bytes = 2056 # todo: implement this  # Todo: all "read" parts require this
 
 
-function payload_peer_to_me(peer::TCPSocket, secure=false)
+function payload_peer_to_me(peer::TCPSocket; secure=false)
 	payload = UInt8[]
     while true
         push!(payload, read(peer, UInt8))
@@ -54,20 +51,22 @@ function payload_peer_to_me(peer::TCPSocket, secure=false)
     return buffer
 end
 
-function payload_me_to_peer(peer::TCPSocket, payload::Vector{UInt8}, secure=false)
+function payload_me_to_peer(peer::TCPSocket, payload::Vector{UInt8}; secure=false)
 	if secure payload = encrypt_sk(payload, find_peer_by_socket(peer).symkey.split(string_delimiter)...) end
 	write(peer, payload)
 	write(peer, byte_delimiter)
 end
 
 
-function message_peer_to_me(peer::TCPSocket, secure=false)
+function message_peer_to_me(peer::TCPSocket; json=false, secure=false) # TODO: make sure json.json really jsons the "\n"s correctly.
 	message = readline(peer)
 	if secure message = decrypt_sk(message, find_peer_by_socket(peer).symkey.split(string_delimiter)...) end
+	if json message = JSON.parse(message) end
 	return message
 end
 
-function message_me_to_peer(peer::TCPSocket, message::String, secure=false)
+function message_me_to_peer(peer::TCPSocket; message::String, json=false, secure=false)
+	if json message = JSON.json(message) end
 	if secure message = encrypt_sk(message, find_peer_by_socket(peer).symkey.split(string_delimiter)...) end
 	write(peer, message*"\n")
 end
