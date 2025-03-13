@@ -64,47 +64,106 @@ end
 
 function handle_req(peer_client::TCPSocket) # try
 
-	# if smt with this id is already being handled, return (same id cannot connect to u twice)
+	# keep alive just msg = message_peer_to_me(peer_client, true) and return if msg == 'alive'
+
+	# todo: this keepalive also calculates "RTT", for regularly updating
+	# no handshake fast rtt, will be discarded if nextline's handshake fails anyway
+
+	# Lagging Handshake
+	# what if you could perform ping/node/data and then IF you are going to use the results, check handshake
+	# what if handshake is lagging, only await it when it matters in the chain...
+	# like the final node you reach.. then await all the previous handshakes
+
 
 	peer_ip, peer_port = getpeername(peer_client)
-	peer_id = they_want_connection(peer)
+	peer_id = they_want_connection(peer)	# what if they tell u their random server socket while first initing from their client
 	peer = peers[peer_id]
 
 	while 1
 
-		msg = message_peer_to_me(peer_client, json=true) # we need cmd and args
+		msg = message_peer_to_me(peer_client, true)
 		cmd = msg["cmd"]
+
 
 		if msg=="ping" # todo: we can ping at random times, and there can be an "avg online per hour" "per day" "per week" etc and if it fallse down below a certain threshold...
 			message_me_to_peer("pong", port)
 			peer.node.last_seen = now(UTC)
 			update_bags(peer.node)
 
+
 		elseif msg=="node" # given a node_id
 			closest_nodes = find_closest_nodes(msg["id"])
+			message_me_to_peer(closest_nodes, true)
+
 
 		elseif msg=="data" # given a data_id   ;; msg["id"]
 
-			# A) Regular case
-			# B) Your file follower case
 
-			#  ask the "space" ; if you contain it, then for permissions
-			# if you dont have it, direct to closest
-			# data can be under */
-			# if its not under general/  ( its me/ or id/ ) then check the read permissions
+			# I should keep a list of follower-prefixes for each follower (after registering them in follow)
+			file = find_in_files("me")
+			if file
+				if check_space_rule("me", peer_id, file)
+
+					# Todo: either redirect to peer or send directly with a probability
+					followers =
+					message_me_to_peer(peer_client, "redirect")
+					# if none of these redirects work, client take it back from you.
+
+					message_me_to_peer(peer_client, "found")
+					#payload_me_to_peer(peer_client, read("space/me/$file", UInt8))
+					continue
+				end
+			end
+
+
+			# this should be space/follow/master/file.ext && whitelist_get.txt
+			file = find_in_files("follow")
+			if file
+
+				# update the get file from followed (if checked < 1 min ago)
+
+
+				message_me_to_peer(peer_client, "found")
+				#payload_me_to_peer(peer_client, read("space/follow/$file", UInt8))
+				continue
+			end
+
+
+
+
+			file = find_in_files("public")
+			if file
+				message_me_to_peer(peer_client, "found")
+				payload_me_to_peer(peer_client, read("space/public/$file", UInt8))
+				continue
+			end
+
+			message_me_to_peer(peer_client, "node")
+			closest_nodes = find_closest_nodes(msg["id"])
+			message_me_to_peer(closest_nodes, true)
+
 
 		elseif msg=="store"
 			# ask the "space" ; if you have it, then if you accept it
 			# public vs follower case (if you are their follower)
+			# or someone wants to store it on your space (put-set)
 
-		# elseif message=="boot" # No such thing, just do "node" on your own ID, then from the closest to you to others, you will keep doing "node" ; do this until you have X amount in your buckets
 
 
 		elseif msg=="follow"
-			# they want to be your follower
-			# for certain files
+			# You manually add your followers to a file with prefix permissions
+			# or when email system is implemented, they can ask you manually and you have pending permissions
+			# OR
+			# they are followers already
+			# want to update the prefixed files
+			# OR
+			# they want to change their prefixes
 
 
+
+		elseif msg=="end"
+			close(peer_client)
+			# check if server socket exists too, if not, delete the peer
 
 
 		end
@@ -123,7 +182,7 @@ end
 
 function start_server(port::Int)
 
-    server = listen(port)
+    server = listen("0.0.0.0", port) # versus 192.168.1.5 privateip
     println("server is listening..")
 
     @async begin while 1

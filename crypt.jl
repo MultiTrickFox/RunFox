@@ -126,7 +126,7 @@ end
 
 
 const publickey = !isfile("publickey.pem") ? generate_pk() : read("publickey.pem", String)
-const privatekey = read("privatekey.pem")
+const privatekey = read("privatekey.pem", String)
 const id = hashi(publickey)
 
 
@@ -137,30 +137,28 @@ const id = hashi(publickey)
 # 	hashed = hashi("&&&&&;;;;|")
 # 	println("Hashed:", hashed)
 
-# 	generate_pk(type="ec")
-
-# 	# encrypted = encrypt_pk("&&&&&;;;;|")
-# 	# println("Encrypted(PK):", encrypted)
-# 	# decrypted = decrypt_pk(encrypted)
-# 	# println("Decrypted(PK):", decrypted)
+# 	encrypted = encrypt_pk("&&&&&;;;;|")
+# 	println("Encrypted(PK):", encrypted)
+# 	decrypted = decrypt_pk(encrypted)
+# 	println("Decrypted(PK):", decrypted)
 
 # 	signed = sign_pk("&&&&&;;;;|")
 # 	println("Signed(PK):", signed)
 # 	verified = verify_pk("&&&&&;;;;|", signed)
 # 	println("Verified(PK):", verified)
 
-# 	# sk,iv = generate_sk()
-# 	# encrypted = encrypt_sk("&&&&&;;;;|", sk, iv)
-# 	# println("Encrypted(SK):", encrypted)
-# 	# decrypted = decrypt_sk(encrypted, sk, iv)
-# 	# println("Decrypted(SK):", decrypted)
+# 	sk,iv = generate_sk()
+# 	encrypted = encrypt_sk("&&&&&;;;;|", sk, iv)
+# 	println("Encrypted(SK):", encrypted)
+# 	decrypted = decrypt_sk(encrypted, sk, iv)
+# 	println("Decrypted(SK):", decrypted)
 
-# 	# randombytes = rand(UInt8, 4)
-# 	# println("randombytes:", randombytes)
-# 	# encrypted = encrypt_sk(randombytes, sk, iv)
-# 	# println("Encrypted(SK)(bytes):", encrypted)
-# 	# decrypted = decrypt_sk(encrypted, sk, iv)
-# 	# println("Decrypted(SK)(bytes):", decrypted)
+# 	randombytes = rand(UInt8, 4)
+# 	println("randombytes:", randombytes)
+# 	encrypted = encrypt_sk(randombytes, sk, iv)
+# 	println("Encrypted(SK)(bytes):", encrypted)
+# 	decrypted = decrypt_sk(encrypted, sk, iv)
+# 	println("Decrypted(SK)(bytes):", decrypted)
 
 # end; test_crypt()
 
